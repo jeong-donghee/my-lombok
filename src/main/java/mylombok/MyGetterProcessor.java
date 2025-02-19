@@ -1,3 +1,5 @@
+package main.java.mylombok;
+
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
@@ -12,8 +14,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-@SupportedAnnotationTypes("MyGetter")
-@SupportedSourceVersion(SourceVersion.RELEASE_8)
+@SupportedAnnotationTypes("main.java.mylombok.MyGetter")
+@SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class MyGetterProcessor extends AbstractProcessor {
 
     private Elements elementUtils;
@@ -46,7 +48,7 @@ public class MyGetterProcessor extends AbstractProcessor {
     }
 
     private List<ElementKind> getSupportedKinds() {
-        return Stream.of(getSupportedClasses(), getSupportedClasses())
+        return Stream.of(getSupportedClasses(), getSupportedFields())
                 .flatMap(List::stream)
                 .toList();
     }
@@ -63,14 +65,19 @@ public class MyGetterProcessor extends AbstractProcessor {
         String className = classElement.getSimpleName().toString();
         String packageName = processingEnv.getElementUtils().getPackageOf(classElement).toString();
 
+        String fields = classElement.getEnclosedElements().stream()
+                .filter(e -> getSupportedFields().contains(e.getKind()))
+                .map(this::generateFieldDeclaration)
+                .collect(Collectors.joining("\n"));
+
         String getters = classElement.getEnclosedElements().stream()
                 .filter(e -> getSupportedFields().contains(e.getKind()))
                 .map(this::generateGetterMethod)
                 .collect(Collectors.joining("\n\n"));
 
         String generatedClass = String.format(
-                "package %s;\n\npublic class %sGenerated {\n\n%s\n}",
-                packageName, className, getters
+                "package %s;\n\npublic class %sGenerated {\n\n%s\n\n%s\n}",
+                packageName, className, fields, getters
         );
 
         writeGeneratedFile(packageName, className + "Generated", generatedClass);
@@ -79,13 +86,22 @@ public class MyGetterProcessor extends AbstractProcessor {
     private void generateGetterForField(Element fieldElement) {
         String className = fieldElement.getEnclosingElement().getSimpleName().toString() + "FieldGetter";
         String packageName = processingEnv.getElementUtils().getPackageOf(fieldElement).toString();
+
+        String field = generateFieldDeclaration(fieldElement);
         String getter = generateGetterMethod(fieldElement);
 
-        String generatedClass = String.format("package %s;\n\npublic class %s {\n\n%s\n}",
-                packageName, className, getter
+        String generatedClass = String.format(
+                "package %s;\n\npublic class %sGenerated {\n\n%s\n\n%s\n}",
+                packageName, className, field, getter
         );
 
-        writeGeneratedFile(packageName, className, generatedClass);
+        writeGeneratedFile(packageName, className + "Generated", generatedClass);
+    }
+
+    private String generateFieldDeclaration(Element field) {
+        String fieldName = field.getSimpleName().toString();
+        String fieldType = field.asType().toString();
+        return String.format("  private %s %s;", fieldType, fieldName);
     }
 
     private String generateGetterMethod(Element field) {
@@ -93,7 +109,7 @@ public class MyGetterProcessor extends AbstractProcessor {
         String fieldType = field.asType().toString();
         String methodName = "get" + fieldName.substring(0, 1).toUpperCase() + fieldName.substring(1);
         return String.format("  public %s %s() { return this.%s; }",
-                fieldType, methodName, fieldType);
+                fieldType, methodName, fieldName);
     }
 
     private void writeGeneratedFile(String packageName, String className, String content) {
